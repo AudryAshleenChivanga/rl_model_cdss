@@ -7,18 +7,18 @@ environment:
   render_height: 224
   fps: 10
   
-  # Camera settings
+  # Camera settings (capsule endoscope inside digestive system)
   fov: 70  # Field of view in degrees
   near_clip: 0.01
   far_clip: 10.0
-  initial_position: [0.0, 0.0, 0.5]  # x, y, z
+  initial_position: [0.0, 0.0, 0.0]  # Start at CENTER (inside stomach)
   initial_rotation: [0.0, 0.0, 0.0]  # roll, pitch, yaw in radians
   
-  # Action space (discrete)
+  # Action space (discrete) - increased for larger 5x scaled model
   actions:
     yaw_delta: 0.1  # radians
     pitch_delta: 0.1  # radians
-    forward_delta: 0.05  # meters
+    forward_delta: 0.15  # meters (3x faster for larger model)
     zoom_delta: 0.02
   
   # Lesion synthesis

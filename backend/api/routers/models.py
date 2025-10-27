@@ -56,13 +56,32 @@ async def load_model(gltf_url: str = Query(..., description="GLTF model URL")):
                 detail="Invalid URL. Must start with http:// or https://"
             )
         
-        # Store URL for environment initialization
-        current_gltf_url = gltf_url
+        # Convert localhost URL to local file path
+        # e.g., http://localhost:3000/models/... -> frontend/models/...
+        if 'localhost' in gltf_url or '127.0.0.1' in gltf_url:
+            # Extract path after hostname:port
+            import re
+            match = re.search(r'https?://[^/]+(/.+)', gltf_url)
+            if match:
+                relative_path = match.group(1).lstrip('/')
+                # Convert to local file path
+                local_path = str(Path('frontend') / relative_path)
+                if Path(local_path).exists():
+                    current_gltf_url = local_path
+                else:
+                    # Try without 'frontend' prefix
+                    current_gltf_url = relative_path
+            else:
+                current_gltf_url = gltf_url
+        else:
+            # For remote URLs, keep as-is
+            current_gltf_url = gltf_url
         
         return {
             "status": "success",
             "message": f"Model URL set: {gltf_url}",
             "gltf_url": gltf_url,
+            "local_path": current_gltf_url,
             "disclaimer": "Ensure model is properly licensed for your use case"
         }
         

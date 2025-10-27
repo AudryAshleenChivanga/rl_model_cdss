@@ -1,6 +1,6 @@
 """Simulation control and streaming endpoints."""
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Query
 from pydantic import BaseModel
 import asyncio
 import base64
@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.sim.env import EndoscopyEnv
+from backend.sim.scenarios import get_scenario_list, SCENARIOS
 from backend.api.routers.models import get_current_gltf_url, get_cnn_model, get_ppo_model
 from backend.utils.config import settings
 
@@ -25,6 +26,7 @@ router = APIRouter()
 simulation_running = False
 simulation_env = None
 simulation_task = None
+current_scenario = "healthy"  # Default scenario
 
 
 class SimulationStatus(BaseModel):
@@ -35,6 +37,53 @@ class SimulationStatus(BaseModel):
     total_reward: float | None = None
 
 
+@router.get("/sim/scenarios")
+async def get_scenarios():
+    """Get list of available clinical scenarios.
+    
+    Returns:
+        List of available scenarios with descriptions
+    """
+    return {
+        "scenarios": get_scenario_list(),
+        "current_scenario": current_scenario
+    }
+
+
+@router.post("/sim/set_scenario")
+async def set_scenario(scenario_id: str = Query(..., description="Scenario ID")):
+    """Set the clinical scenario for next simulation.
+    
+    Args:
+        scenario_id: Scenario identifier
+        
+    Returns:
+        Success message with scenario info
+    """
+    global current_scenario
+    
+    if scenario_id not in SCENARIOS:
+        available = list(SCENARIOS.keys())
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid scenario. Available scenarios: {available}"
+        )
+    
+    current_scenario = scenario_id
+    scenario = SCENARIOS[scenario_id]
+    
+    return {
+        "status": "success",
+        "message": f"Scenario set to: {scenario.name}",
+        "scenario": {
+            "id": scenario.id,
+            "name": scenario.name,
+            "description": scenario.description,
+            "difficulty": scenario.difficulty,
+        }
+    }
+
+
 @router.post("/sim/start")
 async def start_simulation():
     """Start the simulation.
@@ -42,7 +91,7 @@ async def start_simulation():
     Initializes the environment and begins the simulation loop.
     Frames will be available via WebSocket at /api/stream
     """
-    global simulation_running, simulation_env
+    global simulation_running, simulation_env, current_scenario
     
     if simulation_running:
         raise HTTPException(status_code=400, detail="Simulation already running")
@@ -56,11 +105,12 @@ async def start_simulation():
         )
     
     try:
-        # Initialize environment
+        # Initialize environment with current scenario
         config_path = "configs/sim.yaml"
         simulation_env = EndoscopyEnv(
             config_path=config_path,
             gltf_path=gltf_url,
+            scenario_id=current_scenario,  # Pass scenario
         )
         
         # Reset environment
@@ -68,10 +118,17 @@ async def start_simulation():
         
         simulation_running = True
         
+        scenario = SCENARIOS[current_scenario]
+        
         return {
             "status": "started",
             "message": "Simulation started successfully",
             "gltf_url": gltf_url,
+            "scenario": {
+                "id": scenario.id,
+                "name": scenario.name,
+                "description": scenario.description,
+            },
             "info": {
                 "max_steps": simulation_env.max_steps,
                 "observation_shape": obs.shape,
@@ -231,21 +288,21 @@ async def websocket_stream(websocket: WebSocket):
                 # Step environment
                 obs, reward, terminated, truncated, info = simulation_env.step(action_suggested)
                 
-                # Build message
+                # Build message (convert numpy types to native Python types)
                 message = {
                     "frame_base64": frame_base64,
                     "cnn_prob": round(cnn_prob, 4),
-                    "action_suggested": action_suggested,
+                    "action_suggested": int(action_suggested),
                     "action_name": action_name,
                     "reward": round(float(reward), 4),
                     "pose": {
-                        "position": info.get("camera_position", [0, 0, 0]),
-                        "rotation": info.get("camera_rotation", [0, 0, 0]),
+                        "position": [float(x) for x in info.get("camera_position", [0, 0, 0])],
+                        "rotation": [float(x) for x in info.get("camera_rotation", [0, 0, 0])],
                     },
-                    "step": info.get("step", 0),
-                    "coverage": round(info.get("coverage", 0.0), 4),
-                    "collision": info.get("collision", False),
-                    "total_reward": round(info.get("total_reward", 0.0), 4),
+                    "step": int(info.get("step", 0)),
+                    "coverage": round(float(info.get("coverage", 0.0)), 4),
+                    "collision": bool(info.get("collision", False)),
+                    "total_reward": round(float(info.get("total_reward", 0.0)), 4),
                 }
                 
                 # Send message

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from backend.sim.renderer import EndoscopyRenderer
 from backend.sim.lesion_synth import LesionSynthesizer
+from backend.sim.scenarios import ScenarioGenerator
 from backend.utils.config import load_yaml_config
 
 
@@ -33,6 +34,7 @@ class EndoscopyEnv(gym.Env):
         gltf_path: Optional[str] = None,
         render_mode: Optional[str] = "rgb_array",
         curriculum_stage: str = "easy",
+        scenario_id: str = "healthy",
     ):
         """Initialize endoscopy environment.
 
@@ -41,8 +43,12 @@ class EndoscopyEnv(gym.Env):
             gltf_path: Path or URL to GLTF model
             render_mode: Rendering mode
             curriculum_stage: Curriculum difficulty stage
+            scenario_id: Clinical scenario identifier
         """
         super().__init__()
+        
+        # Store scenario
+        self.scenario_id = scenario_id
 
         # Load configuration
         if config_path is None:
@@ -121,6 +127,7 @@ class EndoscopyEnv(gym.Env):
             far_clip=self.far_clip,
         )
         self.lesion_synth = LesionSynthesizer()
+        self.scenario_generator = ScenarioGenerator()
 
         # Load GLTF model if provided
         self.gltf_path = gltf_path
@@ -189,14 +196,14 @@ class EndoscopyEnv(gym.Env):
         self.previous_action = None
         self.total_reward = 0.0
 
-        # Generate random lesions
+        # Generate lesions based on scenario
         if self.renderer.vertices is not None:
-            n_lesions = self.np_random.integers(self.lesions_min, self.lesions_max + 1)
-            self.lesions = self.lesion_synth.create_lesions(
+            self.lesions = self.scenario_generator.generate_scenario(
+                scenario_id=self.scenario_id,
                 vertices=self.renderer.vertices,
                 faces=self.renderer.faces,
-                n_lesions=n_lesions,
             )
+            print(f"Generated {len(self.lesions)} lesions for scenario '{self.scenario_id}'")
         else:
             self.lesions = []
 
@@ -269,6 +276,9 @@ class EndoscopyEnv(gym.Env):
         Args:
             action: Action index
         """
+        # Store old position for rollback if needed
+        old_position = self.camera_position.copy()
+        
         if action == self.ACTION_YAW_POS:
             self.camera_rotation[2] += self.yaw_delta
         elif action == self.ACTION_YAW_NEG:
@@ -280,10 +290,22 @@ class EndoscopyEnv(gym.Env):
         elif action == self.ACTION_FORWARD:
             # Move forward in camera's forward direction
             forward = self._get_forward_vector()
-            self.camera_position += forward * self.forward_delta
+            new_position = self.camera_position + forward * self.forward_delta
+            
+            # Check if new position is valid (inside mesh)
+            if self._is_position_valid(new_position):
+                self.camera_position = new_position
+            # else: stay at current position (movement blocked by boundary)
+            
         elif action == self.ACTION_BACKWARD:
             forward = self._get_forward_vector()
-            self.camera_position -= forward * self.forward_delta
+            new_position = self.camera_position - forward * self.forward_delta
+            
+            # Check if new position is valid (inside mesh)
+            if self._is_position_valid(new_position):
+                self.camera_position = new_position
+            # else: stay at current position (movement blocked by boundary)
+            
         elif action == self.ACTION_ZOOM_IN:
             # Zoom is handled by FOV adjustment (not implemented here)
             pass
@@ -297,6 +319,42 @@ class EndoscopyEnv(gym.Env):
 
         # Update renderer
         self.renderer.set_camera_pose(self.camera_position, self.camera_rotation)
+    
+    def _is_position_valid(self, position: np.ndarray) -> bool:
+        """Check if a position is inside the mesh boundaries.
+        
+        Args:
+            position: Position to check (x, y, z)
+            
+        Returns:
+            True if position is valid (inside mesh), False otherwise
+        """
+        if self.renderer.mesh is None or self.renderer.vertices is None:
+            # If no mesh loaded, use simple sphere constraint
+            return np.linalg.norm(position) < 0.8
+        
+        # Check if position is inside the mesh using ray casting
+        # Cast rays in multiple directions and count intersections
+        # Odd number = inside, even number = outside
+        try:
+            # Simple bounds check first (fast)
+            bounds_min = self.renderer.vertices.min(axis=0)
+            bounds_max = self.renderer.vertices.max(axis=0)
+            margin = 0.2  # Stay away from edges
+            
+            if not np.all((position >= bounds_min + margin) & (position <= bounds_max - margin)):
+                return False
+            
+            # Additional check: stay away from mesh surface
+            min_distance = self.renderer.check_distance_to_surface(position)
+            if min_distance < self.collision_threshold * 2:
+                return False
+                
+            return True
+            
+        except Exception as e:
+            # Fallback to simple sphere constraint
+            return np.linalg.norm(position) < 0.8
 
     def _get_forward_vector(self) -> np.ndarray:
         """Get camera's forward direction vector.

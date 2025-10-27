@@ -71,6 +71,10 @@ class EndoscopyRenderer:
         self.mesh = None
         self.vertices = None
         self.faces = None
+        
+        # Camera pose storage
+        self.camera_position = np.array([0.0, 0.0, 0.0])
+        self.camera_rotation = np.array([0.0, 0.0, 0.0])
 
     def load_gltf(self, gltf_path: str) -> None:
         """Load GLTF/GLB model.
@@ -132,7 +136,7 @@ class EndoscopyRenderer:
         return temp_file.name
 
     def _normalize_mesh(self) -> None:
-        """Center and scale mesh to unit size."""
+        """Center and scale mesh to larger size for interior navigation."""
         if self.mesh is None:
             return
         
@@ -141,11 +145,18 @@ class EndoscopyRenderer:
         self.mesh.vertices -= center
         self.vertices = np.array(self.mesh.vertices)
         
-        # Scale to unit sphere
+        # Scale to unit sphere first
         max_extent = np.abs(self.mesh.vertices).max()
         if max_extent > 0:
             self.mesh.vertices /= max_extent
-            self.vertices = np.array(self.mesh.vertices)
+            
+        # Then scale UP by 5x to make model much larger
+        # This allows camera to navigate INSIDE the digestive system
+        scale_factor = 5.0
+        self.mesh.vertices *= scale_factor
+        self.vertices = np.array(self.mesh.vertices)
+        
+        print(f"Mesh scaled to {scale_factor}x size for interior navigation")
 
     def setup_scene(self) -> None:
         """Setup pyrender scene with mesh, camera, and lights."""
@@ -252,13 +263,39 @@ class EndoscopyRenderer:
             - depth_map: Depth map (H, W) or None
         """
         if not PYRENDER_AVAILABLE:
-            # Return a placeholder image if rendering not available
+            # Create a simulated endoscopy view placeholder
             placeholder = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-            placeholder[:] = [50, 50, 100]  # Dark blue background
-            # Add text indicating rendering not available
-            cv2.putText(placeholder, "3D Rendering Unavailable", (10, self.height//2),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            return placeholder, None
+            
+            # Simulate tissue-like colors (pinkish-red mucosal tissue)
+            base_color = np.array([150, 80, 100], dtype=np.uint8)  # Reddish-pink
+            
+            # Add radial gradient (darker at edges, lighter in center)
+            center_x, center_y = self.width // 2, self.height // 2
+            y, x = np.ogrid[:self.height, :self.width]
+            distance = np.sqrt((x - center_x)**2 + (y - center_y)**2)
+            max_distance = np.sqrt(center_x**2 + center_y**2)
+            gradient = 1.0 - (distance / max_distance) * 0.5
+            
+            for i in range(3):
+                placeholder[:, :, i] = (base_color[i] * gradient).astype(np.uint8)
+            
+            # Add some texture noise to simulate mucosal surface
+            noise = np.random.randint(-20, 20, (self.height, self.width, 3), dtype=np.int16)
+            placeholder = np.clip(placeholder.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+            
+            # Add circular vignette (endoscope lens effect)
+            mask = distance < max_distance * 0.9
+            vignette = np.zeros_like(placeholder)
+            vignette[mask] = placeholder[mask]
+            vignette[~mask] = [20, 10, 15]  # Dark edges
+            
+            # Add subtle text overlay
+            cv2.putText(vignette, "Simulated View", (10, 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1, cv2.LINE_AA)
+            cv2.putText(vignette, f"Pos: ({self.camera_position[0]:.2f}, {self.camera_position[1]:.2f}, {self.camera_position[2]:.2f})", 
+                       (10, self.height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (180, 180, 180), 1, cv2.LINE_AA)
+            
+            return vignette, None
             
         if self.renderer is None:
             raise RuntimeError("Scene not setup. Call setup_scene() first.")
@@ -304,14 +341,26 @@ class EndoscopyRenderer:
         Returns:
             True if collision detected
         """
-        if self.vertices is None:
-            return False
+        min_distance = self.check_distance_to_surface(camera_position)
+        return min_distance < threshold
+    
+    def check_distance_to_surface(self, position: np.ndarray) -> float:
+        """Check distance from position to nearest mesh surface.
         
-        # Find closest vertex
-        distances = np.linalg.norm(self.vertices - camera_position, axis=1)
+        Args:
+            position: Position to check (x, y, z)
+            
+        Returns:
+            Minimum distance to mesh surface
+        """
+        if self.vertices is None:
+            return float('inf')
+        
+        # Find closest vertex (simple approximation)
+        distances = np.linalg.norm(self.vertices - position, axis=1)
         min_distance = distances.min()
         
-        return min_distance < threshold
+        return min_distance
 
     def compute_coverage(
         self,

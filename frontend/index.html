@@ -47,6 +47,15 @@
                         <p class="note">Digestive System model from <a href="https://skfb.ly/oPDYC" target="_blank">Sketchfab (adimed)</a> - CC Attribution. Try Duck model: <a href="#" onclick="document.getElementById('gltf-url').value='https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf'; return false;">Click here</a></p>
                     </div>
 
+                    <!-- Clinical Scenario Selection -->
+                    <div class="control-group">
+                        <label for="scenario-select">Clinical Scenario:</label>
+                        <select id="scenario-select" class="scenario-select">
+                            <option value="">Loading scenarios...</option>
+                        </select>
+                        <p class="scenario-description" id="scenario-description">Select a clinical scenario to simulate</p>
+                    </div>
+
                     <!-- Simulation Controls -->
                     <div class="control-group">
                         <button id="start-btn" class="btn btn-success" disabled>Start Simulation</button>

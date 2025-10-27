@@ -29,6 +29,8 @@ const elements = {
     
     // Inputs
     gltfUrl: document.getElementById('gltf-url'),
+    scenarioSelect: document.getElementById('scenario-select'),
+    scenarioDescription: document.getElementById('scenario-description'),
     
     // Status
     connectionStatus: document.getElementById('connection-status'),
@@ -119,6 +121,72 @@ function initThreeJS() {
     console.log('Three.js initialized');
 }
 
+// Load Clinical Scenarios
+async function loadScenarios() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/sim/scenarios`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch scenarios');
+        }
+        
+        const data = await response.json();
+        const scenarios = data.scenarios;
+        
+        // Populate dropdown
+        elements.scenarioSelect.innerHTML = '';
+        scenarios.forEach(scenario => {
+            const option = document.createElement('option');
+            option.value = scenario.id;
+            option.textContent = `${scenario.name} [${scenario.difficulty.toUpperCase()}]`;
+            option.dataset.description = scenario.description;
+            option.dataset.difficulty = scenario.difficulty;
+            elements.scenarioSelect.appendChild(option);
+        });
+        
+        // Set initial scenario
+        if (scenarios.length > 0) {
+            elements.scenarioSelect.value = data.current_scenario || scenarios[0].id;
+            updateScenarioDescription();
+        }
+        
+        console.log(`Loaded ${scenarios.length} clinical scenarios`);
+        
+    } catch (error) {
+        console.error('Error loading scenarios:', error);
+        elements.scenarioSelect.innerHTML = '<option value="">Error loading scenarios</option>';
+    }
+}
+
+// Update scenario description when selection changes
+function updateScenarioDescription() {
+    const selected = elements.scenarioSelect.selectedOptions[0];
+    if (selected && selected.dataset.description) {
+        elements.scenarioDescription.textContent = selected.dataset.description;
+        elements.scenarioDescription.className = `scenario-description difficulty-${selected.dataset.difficulty}`;
+    }
+}
+
+// Set scenario on backend
+async function setScenario(scenarioId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/sim/set_scenario?scenario_id=${encodeURIComponent(scenarioId)}`, {
+            method: 'POST',
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to set scenario');
+        }
+        
+        const data = await response.json();
+        console.log('Scenario set:', data.scenario.name);
+        return true;
+        
+    } catch (error) {
+        console.error('Error setting scenario:', error);
+        return false;
+    }
+}
+
 // Update camera path visualization
 function updateCameraPath(position) {
     if (!threeScene) return;
@@ -148,18 +216,66 @@ function updateCameraPath(position) {
         threeScene.add(line);
     }
     
-    // Add current camera position marker
+    // Add current camera position marker (capsule endoscope)
     const oldMarker = threeScene.getObjectByName('currentCamera');
     if (oldMarker) {
         threeScene.remove(oldMarker);
     }
     
-    const markerGeometry = new THREE.SphereGeometry(0.02, 16, 16);
-    const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff6b6b });
-    const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-    marker.position.set(position[0], position[1], position[2]);
-    marker.name = 'currentCamera';
-    threeScene.add(marker);
+    // Create capsule endoscope shape (cylinder with hemispherical ends)
+    const capsuleGroup = new THREE.Group();
+    capsuleGroup.name = 'currentCamera';
+    
+    // Main body (cylinder)
+    const bodyGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.08, 16);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xf0f0f0,
+        metalness: 0.6,
+        roughness: 0.3,
+        emissive: 0x404040
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.rotation.x = Math.PI / 2; // Orient along Z-axis
+    capsuleGroup.add(body);
+    
+    // Front hemisphere (camera lens)
+    const frontGeometry = new THREE.SphereGeometry(0.03, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+    const lensMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x2222ff,
+        metalness: 0.9,
+        roughness: 0.1,
+        emissive: 0x000033
+    });
+    const front = new THREE.Mesh(frontGeometry, lensMaterial);
+    front.position.z = 0.04;
+    front.rotation.x = Math.PI / 2;
+    capsuleGroup.add(front);
+    
+    // Back hemisphere
+    const backGeometry = new THREE.SphereGeometry(0.03, 16, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
+    const back = new THREE.Mesh(backGeometry, bodyMaterial);
+    back.position.z = -0.04;
+    back.rotation.x = -Math.PI / 2;
+    capsuleGroup.add(back);
+    
+    // LED light indicators
+    const ledGeometry = new THREE.SphereGeometry(0.008, 8, 8);
+    const ledMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00, emissive: 0xffff00 });
+    const led1 = new THREE.Mesh(ledGeometry, ledMaterial);
+    led1.position.set(0.025, 0, 0.02);
+    capsuleGroup.add(led1);
+    const led2 = new THREE.Mesh(ledGeometry, ledMaterial);
+    led2.position.set(-0.025, 0, 0.02);
+    capsuleGroup.add(led2);
+    
+    // Position and orient the capsule
+    capsuleGroup.position.set(position[0], position[1], position[2]);
+    
+    // Orient capsule based on camera direction (if available)
+    // For now, just point forward
+    capsuleGroup.lookAt(position[0], position[1], position[2] + 1);
+    
+    threeScene.add(capsuleGroup);
 }
 
 // Load Model
@@ -250,12 +366,12 @@ async function loadModelInThreeJS(url) {
                 // Center the model
                 loadedModel.position.sub(center);
                 
-                // Scale to fit in view (optional)
-                const maxDim = Math.max(size.x, size.y, size.z);
-                if (maxDim > 2) {
-                    const scale = 2 / maxDim;
-                    loadedModel.scale.multiplyScalar(scale);
-                }
+                // Scale UP by 5x to match backend (for interior navigation)
+                // This makes the digestive system large enough to navigate inside
+                const scaleFactor = 5.0;
+                loadedModel.scale.multiplyScalar(scaleFactor);
+                
+                console.log(`Model scaled to ${scaleFactor}x for interior navigation`);
                 
                 // Add to scene
                 threeScene.add(loadedModel);
@@ -281,6 +397,15 @@ async function startSimulation() {
     try {
         elements.startBtn.disabled = true;
         
+        // Set scenario first
+        const selectedScenario = elements.scenarioSelect.value;
+        if (selectedScenario) {
+            const scenarioSet = await setScenario(selectedScenario);
+            if (!scenarioSet) {
+                throw new Error('Failed to set scenario');
+            }
+        }
+        
         // Start simulation on backend
         const response = await fetch(`${API_BASE_URL}/sim/start`, {
             method: 'POST',
@@ -292,6 +417,11 @@ async function startSimulation() {
         
         const data = await response.json();
         console.log('Simulation started:', data);
+        
+        // Display scenario info
+        if (data.scenario) {
+            console.log(`Scenario: ${data.scenario.name} - ${data.scenario.description}`);
+        }
         
         elements.simStatus.textContent = 'Running';
         elements.simStatus.style.color = '#51cf66';
@@ -521,11 +651,15 @@ elements.startBtn.addEventListener('click', startSimulation);
 elements.stopBtn.addEventListener('click', stopSimulation);
 elements.resetBtn.addEventListener('click', reset);
 elements.downloadBtn.addEventListener('click', downloadMetrics);
+elements.scenarioSelect.addEventListener('change', updateScenarioDescription);
 
 // Initialize on load
 window.addEventListener('DOMContentLoaded', () => {
     console.log('Application initialized');
     initThreeJS();
+    
+    // Load scenarios
+    loadScenarios();
     
     // Check API health
     fetch(`${API_BASE_URL}/health`)

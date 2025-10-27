@@ -5,6 +5,49 @@
     box-sizing: border-box;
 }
 
+/* Scenario Selector */
+.scenario-select {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #e1e8ed;
+    border-radius: 6px;
+    font-size: 14px;
+    background-color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.scenario-select:hover {
+    border-color: #667eea;
+}
+
+.scenario-select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.scenario-description {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #64748b;
+    font-style: italic;
+    line-height: 1.4;
+    min-height: 36px;
+}
+
+.scenario-description.difficulty-easy {
+    color: #51cf66;
+}
+
+.scenario-description.difficulty-medium {
+    color: #ffd43b;
+}
+
+.scenario-description.difficulty-hard {
+    color: #ff6b6b;
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: #f0f2f5;
