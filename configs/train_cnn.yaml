@@ -1,0 +1,91 @@
+# CNN Training Configuration
+
+model:
+  name: "resnet18"
+  num_classes: 2  # normal vs. lesion
+  pretrained: true
+  dropout: 0.3
+
+training:
+  epochs: 20
+  batch_size: 32
+  learning_rate: 3.0e-4
+  weight_decay: 1.0e-4
+  
+  # Optimizer
+  optimizer: "adam"
+  betas: [0.9, 0.999]
+  
+  # Learning rate scheduler
+  scheduler: "cosine"
+  warmup_epochs: 2
+  min_lr: 1.0e-6
+  
+  # Loss function
+  loss: "bce_with_logits"
+  pos_weight: 2.0  # Weight for positive class (lesions)
+  
+  # Mixed precision
+  use_amp: true
+  
+  # Early stopping
+  patience: 5
+  min_delta: 0.001
+
+data:
+  dataset_path: "./data/synth"
+  img_size: 224
+  num_workers: 4
+  pin_memory: true
+  
+  # Data splits
+  train_split: 0.7
+  val_split: 0.15
+  test_split: 0.15
+  
+  # Augmentations
+  augmentations:
+    horizontal_flip: 0.5
+    vertical_flip: 0.3
+    rotation: 15  # degrees
+    brightness: 0.2
+    contrast: 0.2
+    saturation: 0.1
+    hue: 0.05
+    gaussian_blur: 0.1
+    gaussian_noise: 0.02
+
+evaluation:
+  metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1"
+    - "roc_auc"
+    - "pr_auc"
+  
+  # Thresholds for classification
+  threshold: 0.5
+  threshold_search: true  # Search for optimal threshold on validation set
+
+logging:
+  tensorboard: true
+  log_dir: "./logs/cnn"
+  save_checkpoints: true
+  checkpoint_dir: "./checkpoints"
+  save_best_only: true
+  save_last: true
+  
+  # Logging frequency
+  log_every_n_steps: 50
+  val_every_n_epochs: 1
+
+export:
+  torchscript: true
+  onnx: true
+  output_dir: "./checkpoints"
+
+# Reproducibility
+seed: 42
+deterministic: true
+

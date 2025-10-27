@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: hpylori-rl-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./configs:/app/configs
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - DEVICE=cpu  # Change to 'cuda' if GPU available
+      - LOG_LEVEL=INFO
+      - PYOPENGL_PLATFORM=osmesa  # Use OSMesa for offscreen rendering
+    restart: unless-stopped
+    networks:
+      - hpylori-network
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+  # Frontend web server (simple HTTP server)
+  frontend:
+    image: python:3.11-slim
+    container_name: hpylori-rl-frontend
+    command: python -m http.server 3000 --directory /app/frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app/frontend:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - hpylori-network
+
+networks:
+  hpylori-network:
+    driver: bridge
+
+volumes:
+  data:
+  checkpoints:
+  logs:
+  reports:
+

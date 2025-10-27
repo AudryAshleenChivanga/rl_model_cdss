@@ -1,0 +1,68 @@
+# Core dependencies
+torch>=2.1.0
+torchvision>=0.16.0
+numpy>=1.24.0
+pillow>=10.0.0
+
+# Gymnasium and RL
+gymnasium>=0.29.0
+stable-baselines3>=2.1.0
+sb3-contrib>=2.1.0
+
+# 3D rendering and geometry
+trimesh>=4.0.0
+pyrender>=0.1.45
+pyglet<2.0  # pyrender compatibility
+opencv-python>=4.8.0
+
+# FastAPI and web
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+python-multipart>=0.0.6
+aiofiles>=23.2.0
+
+# Deep learning utilities
+pytorch-lightning>=2.1.0
+torchmetrics>=1.2.0
+tensorboard>=2.15.0
+onnx>=1.15.0
+onnxruntime>=1.16.0
+
+# Data and scientific computing
+pandas>=2.0.0
+scikit-learn>=1.3.0
+scipy>=1.11.0
+matplotlib>=3.7.0
+seaborn>=0.13.0
+
+# Configuration and utilities
+pyyaml>=6.0
+python-dotenv>=1.0.0
+pydantic>=2.4.0
+pydantic-settings>=2.0.0
+
+# Logging and monitoring
+loguru>=0.7.0
+tqdm>=4.66.0
+
+# Image processing
+# noise>=1.2.2  # Perlin noise - requires C++ compiler on Windows, using alternative
+imageio>=2.31.0
+
+# HTTP client for downloading models
+httpx>=0.25.0
+requests>=2.31.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+
+# Code quality (optional, for development)
+black>=23.10.0
+flake8>=6.1.0
+mypy>=1.6.0
+isort>=5.12.0
+

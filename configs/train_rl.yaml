@@ -1,0 +1,139 @@
+# RL Training Configuration (PPO)
+
+algorithm:
+  name: "PPO"
+  policy: "CnnPolicy"
+  
+  # PPO hyperparameters
+  n_steps: 2048  # Steps per update
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  clip_range_vf: null
+  normalize_advantage: true
+  ent_coef: 0.01  # Entropy coefficient
+  vf_coef: 0.5    # Value function coefficient
+  max_grad_norm: 0.5
+  learning_rate: 3.0e-4
+  
+  # Policy network architecture
+  policy_kwargs:
+    net_arch:
+      - type: "cnn"
+        filters: [32, 64, 64]
+        kernel_sizes: [8, 4, 3]
+        strides: [4, 2, 1]
+      - type: "mlp"
+        pi: [256, 128]  # Actor
+        vf: [256, 128]  # Critic
+    activation_fn: "relu"
+    normalize_images: true
+
+training:
+  total_timesteps: 2000000
+  n_envs: 8  # Parallel environments
+  
+  # Learning rate schedule
+  lr_schedule: "linear"  # linear decay
+  
+  # Exploration
+  use_sde: false  # State-dependent exploration
+  sde_sample_freq: -1
+  
+  # Frame stacking
+  frame_stack: 4
+  
+  # Reward scaling
+  normalize_rewards: true
+  reward_scale: 1.0
+
+environment:
+  env_id: "EndoscopyEnv-v0"
+  config_path: "./configs/sim.yaml"
+  
+  # Wrappers
+  wrappers:
+    - name: "FrameStack"
+      n_frames: 4
+    - name: "NormalizeObservation"
+    - name: "NormalizeReward"
+      gamma: 0.99
+
+curriculum:
+  enabled: true
+  difficulty_schedule:
+    - timesteps: 0
+      stage: "easy"
+    - timesteps: 500000
+      stage: "medium"
+    - timesteps: 1500000
+      stage: "hard"
+
+evaluation:
+  eval_freq: 10000  # Evaluate every N timesteps
+  n_eval_episodes: 10
+  deterministic: true
+  
+  # Metrics to track
+  metrics:
+    - "mean_reward"
+    - "std_reward"
+    - "mean_ep_length"
+    - "coverage"
+    - "anomaly_recall"
+    - "collision_rate"
+
+callbacks:
+  # Checkpoint callback
+  checkpoint:
+    save_freq: 50000
+    save_path: "./checkpoints/rl"
+    name_prefix: "ppo"
+    save_replay_buffer: false
+    save_vecnormalize: true
+  
+  # Best model callback
+  best_model:
+    monitor: "mean_reward"
+    save_path: "./checkpoints"
+    name_prefix: "ppo_best"
+    verbose: 1
+  
+  # Early stopping
+  early_stopping:
+    enabled: false
+    patience: 100000
+    min_delta: 0.01
+  
+  # TensorBoard logging
+  tensorboard:
+    log_dir: "./logs/rl"
+
+export:
+  # Export best model
+  formats:
+    - "sb3_zip"
+    - "onnx"
+  output_dir: "./checkpoints"
+  
+  # ONNX export settings
+  onnx:
+    opset_version: 14
+    input_names: ["observation"]
+    output_names: ["action"]
+    dynamic_axes:
+      observation:
+        0: "batch_size"
+      action:
+        0: "batch_size"
+
+# Reproducibility
+seed: 42
+deterministic: false  # Set to true for full reproducibility (slower)
+
+# Logging
+verbose: 1  # 0: no output, 1: info, 2: debug
+log_interval: 10  # Log every N updates
+
